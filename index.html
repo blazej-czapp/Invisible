@@ -1,0 +1,21 @@
+<html>
+<head>
+    <meta charset="UTF-8">
+
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
+    <!--<script src="jquery-2.1.4.js"></script>-->
+    <script src="map-generator.js"></script>
+
+    <script>
+        $(document).ready(function() {
+            var gen = new MapGenerator();
+            var painter = new MapPainter();
+            painter.drawMap(gen.generateMap(30, 16, 9));
+        });
+    </script>
+</head>
+
+<body>
+    <canvas id="board" style="border:1px solid #000000;"></canvas>
+</body>
+</html>
