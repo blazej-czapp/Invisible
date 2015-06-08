@@ -34,23 +34,34 @@ function DoorPassage(fromX, fromY, toX, toY) {
     this.to   = new Location(toX, toY);
 }
 
-function Room(x, y, width, height) {
+function Rect(x, y, width, height) {
     this.x = x;
     this.y = y;
     this.width = width;
     this.height = height;
-    this.tiles = [];
+
+    this.overlaps = function(other) {
+        // http://stackoverflow.com/a/306332/194825
+        return this.x < other.x + other.width && this.x + this.width > other.x && this.y < other.y + other.height && this.y + this.height > other.y;
+    }
+}
+
+function Room(loc, width, height) {
+    this.x = loc.x;
+    this.y = loc.y;
+    this.width = width;
+    this.height = height;
+    this.tiles = {};
     this.doors = [];
 
-    for (var y = 0; y < height; y++) {
-        this.tiles[y] = [];
-        for (var x = 0; x < width; x++) {
-            this.tiles[y][x] = TileType.FLOOR;
+    for (var x = 0; x < width; x++) {
+        for (var y = 0; y < height; y++) {
+            this.tiles[new Location(x, y)] = TileType.FLOOR;
         }
     }
 
-    this.getTile = function(x, y) {
-        return this.tiles[y][x];
+    this.getTile = function(location) {
+        return this.tiles[location];
     }
 
     /*
@@ -83,6 +94,14 @@ function Room(x, y, width, height) {
         this.doors.push(passage);
     }
 
+    this.tileOccupied = function(x, y) {
+
+    }
+
+    this.overlapsWorld = function(loc, width, height) {
+        return new Rect(this.x, this.y, this.width, this.height).overlaps(new Rect(loc.x, loc.y, width, height));
+    }
+
     this.toString = function() {
         return "x: " + this.x + ", y: " + this.y + ", width: " + this.width + ", height: " + this.height;
     }
@@ -90,7 +109,7 @@ function Room(x, y, width, height) {
     this.draw = function(painter) {
         for (var x = 0; x < this.width; x++) {
             for (var y = 0; y < this.height; y++) {
-                painter.drawTile(this.x + x, this.y + y, this.tiles[y][x]);
+                painter.drawTile(this.x + x, this.y + y, this.tiles[new Location(x, y)]);
 
                 if (x == 0) {
                     painter.drawWall(new Location(this.x + x, this.y + y), new Location(this.x + x - 1, this.y + y));
@@ -116,21 +135,17 @@ function Room(x, y, width, height) {
 function Map(width, height) {
     this.width = width;
     this.height = height;
-    this.tiles = [];
     this.rooms = [];
 
-    this.collides = function(width, height, x, y) {
-        if (x + width > this.width || y + height > this.height || x < 0 || y < 0) {
+    this.collides = function(width, height, loc) {
+        if (loc.x + width > this.width || loc.y + height > this.height || loc.x < 0 || loc.y < 0) {
             // going off the map
             return true;
         }
 
-        for (var i = x; i < x + width; i++) {
-            for (var j = y; j < y + height; j++) {
-                if (this.get(i, j) != TileType.NONE) {
-                    // some tile's already defined here, collision
-                    return true;
-                }
+        for (var i = 0; i < this.rooms.length; i++) {
+            if (this.rooms[i].overlapsWorld(loc, width, height)) {
+                return true;
             }
         }
 
@@ -138,43 +153,19 @@ function Map(width, height) {
     }
 
     this.insert = function(room) {
-        for (var y = 0; y < room.height; y++) {
-            var mapY = room.y + y;
-            if (this.tiles[mapY] == undefined) {
-                this.tiles[mapY] = [];
-            }
-            for (var x = 0; x < room.width; x++) {
-                var mapX = room.x + x;
-                this.tiles[mapY][mapX] = room.getTile(x, y);
-            }
-        }
-
         this.rooms.push(room);
     }
 
     this.findFit = function(x, y, width, height) {
         for (var i = 0; i < width; i++) {
             for (var j = 0; j < height; j++) {
-                if (!(this.collides(width, height, x - i, y - j))) {
-                    return [x - i, y - j];
+                if (!(this.collides(width, height, new Location(x - i, y - j)))) {
+                    return new Location(x - i, y - j);
                 }
             }
         }
 
         return undefined;
-    }
-
-    this.get = function(x, y) {
-        if (this.tiles[y] == undefined) {
-            return TileType.NONE;
-        }
-
-        var tile = this.tiles[y][x];
-        if (tile == undefined) {
-            return TileType.NONE;
-        } else {
-            return tile;
-        }
     }
 
     this.draw = function(painter) {
@@ -194,7 +185,7 @@ function MapGenerator() {
         if (fit == undefined) {
             return undefined;
         } else {
-            return new Room(fit[0], fit[1], width, height);
+            return new Room(fit, width, height);
         }
     }
 
@@ -205,7 +196,7 @@ function MapGenerator() {
         var map = new Map(width, height);
         map.insert(this.generateRoom(map, rand(0, map.width), rand(0, map.height)));
 
-        for (var i = 0; i < noOfRooms; i++) {
+        for (var i = 0; i < noOfRooms - 1; i++) {
             var safety = 0;
             while (true) {
                 if (safety > 1000) {
