@@ -18,6 +18,22 @@ var rand = function(from, to) {
     }
 }
 
+/*
+ * convenience class just to be able to access coordinates by name rather than [0], [1]
+ */
+function Location(x, y) {
+    this.x = x;
+    this.y = y;
+}
+
+/*
+ * from/to ordering shouldn't matter, doors are bidirectional (or are they?)
+ */
+function DoorPassage(fromX, fromY, toX, toY) {
+    this.from = new Location(fromX, fromY);
+    this.to   = new Location(toX, toY);
+}
+
 function Room(x, y, width, height) {
     this.x = x;
     this.y = y;
@@ -33,30 +49,38 @@ function Room(x, y, width, height) {
         }
     }
 
-    this.get = function(x, y) {
+    this.getTile = function(x, y) {
         return this.tiles[y][x];
     }
 
     /*
-     * Returns a random tile immediately outside of the perimiter
+     * Returns a random passage from a tile within to a tile immediatelly outside of the room
      */
-    this.randomExitPos = function() {
+    this.randomDoorPassage = function() {
         var circumference = this.width * 2 + this.height * 2;
         var exitOrdinal = rand(circumference);
 
         if (exitOrdinal < width) { // above the top row
-            return [this.x + exitOrdinal, this.y - 1];
+            return new DoorPassage(this.x + exitOrdinal, this.y, this.x + exitOrdinal, this.y - 1);
         } else if (exitOrdinal < width * 2) { // below the bottom row
-            return [this.x + exitOrdinal - this.width, this.y + this.height];
+            var exitX = this.x + exitOrdinal - this.width;
+            var exitY = this.y + this.height - 1;
+            return new DoorPassage(exitX, exitY, exitX, exitY + 1);
         } else if (exitOrdinal < width * 2 + height) { // to the right
-            return [this.x + this.width, this.y + exitOrdinal - 2 * this.width];
+            var exitX = this.x + this.width - 1;
+            var exitY = this.y + exitOrdinal - 2 * this.width;
+            return new DoorPassage(exitX, exitY, exitX + 1, exitY);
         } else { // to the left
-            return [this.x - 1, this.y + exitOrdinal - 2 * this.width - this.height];
+            var exitX = this.x;
+            var exitY = this.y + exitOrdinal - 2 * this.width - this.height;
+            return new DoorPassage(exitX, exitY, exitX - 1, exitY);
         }
+
+        assert(false, "Can't properly randomise a door!?");
     }
 
-    this.addDoor = function(pos) {
-        this.doors.push(pos);
+    this.addDoor = function(passage) {
+        this.doors.push(passage);
     }
 
     this.toString = function() {
@@ -69,32 +93,22 @@ function Room(x, y, width, height) {
                 painter.drawTile(this.x + x, this.y + y, this.tiles[y][x]);
 
                 if (x == 0) {
-                    painter.drawWall(this.x + x, this.y + y, this.x + x - 1, this.y + y);
+                    painter.drawWall(new Location(this.x + x, this.y + y), new Location(this.x + x - 1, this.y + y));
                 }
                 if (y == 0) {
-                    painter.drawWall(this.x + x, this.y + y, this.x + x, this.y + y - 1);
+                    painter.drawWall(new Location(this.x + x, this.y + y), new Location(this.x + x, this.y + y - 1));
                 }
                 if (x == this.width - 1) {
-                    painter.drawWall(this.x + x, this.y + y, this.x + x + 1, this.y + y);
+                    painter.drawWall(new Location(this.x + x, this.y + y), new Location(this.x + x + 1, this.y + y));
                 }
                 if (y == this.height - 1) {
-                    painter.drawWall(this.x + x, this.y + y, this.x + x, this.y + y + 1);
+                    painter.drawWall(new Location(this.x + x, this.y + y), new Location(this.x + x, this.y + y + 1));
                 }
             }
         }
 
         for (var i = 0; i < this.doors.length; i++) {
-            var exitTile = {x: this.doors[i][0], y: this.doors[i][1] };
-            if (exitTile.x < this.x) {
-                painter.drawDoor(exitTile.x, exitTile.y, exitTile.x + 1, exitTile.y);
-            } else if (exitTile.x == this.x + this.width) {
-                painter.drawDoor(exitTile.x, exitTile.y, exitTile.x - 1, exitTile.y);
-            } else if (exitTile.y < this.y) {
-                painter.drawDoor(exitTile.x, exitTile.y, exitTile.x, exitTile.y + 1);
-            } else {
-                assert(exitTile.y == this.y + this.height, "invalid exit tile: " + exitTile);
-                painter.drawDoor(exitTile.x, exitTile.y, exitTile.x, exitTile.y - 1);
-            }
+            painter.drawDoor(this.doors[i]);
         }
     }
 }
@@ -131,7 +145,7 @@ function Map(width, height) {
             }
             for (var x = 0; x < room.width; x++) {
                 var mapX = room.x + x;
-                this.tiles[mapY][mapX] = room.get(x, y);
+                this.tiles[mapY][mapX] = room.getTile(x, y);
             }
         }
 
@@ -164,8 +178,7 @@ function Map(width, height) {
     }
 
     this.draw = function(painter) {
-        // first hack - the last room doesn't know its exit so draw it first (the exit will be drawn by an earlier room)
-        for (var i = this.rooms.length - 1; i >= 0; i--) {
+        for (var i = 0; i < this.rooms.length; i++) {
             this.rooms[i].draw(painter);
         }
     }
@@ -174,8 +187,8 @@ function Map(width, height) {
 function MapGenerator() {
     this.generateRoom = function(map, entryX, entryY) {
         // TODO find better distribution
-        width = Math.floor((Math.random() * 5) + 2);
-        height = Math.floor((Math.random() * 5) + 2);
+        width = rand(2, 6);
+        height = rand(2, 6);
 
         fit = map.findFit(entryX, entryY, width, height);
         if (fit == undefined) {
@@ -201,11 +214,12 @@ function MapGenerator() {
                 }
                 safety++;
                 var randRoom = map.rooms[rand(map.rooms.length)];
-                var exit = randRoom.randomExitPos();
-                var newRoom = this.generateRoom(map, exit[0], exit[1]);
+                var exit = randRoom.randomDoorPassage();
+                var newRoom = this.generateRoom(map, exit.to.x, exit.to.y);
 
                 if (newRoom != undefined) {
                     randRoom.addDoor(exit);
+                    newRoom.addDoor(exit);
                     map.insert(newRoom);
                     break;
                 }
@@ -254,30 +268,30 @@ function MapPainter() {
      * Draws a boundary (e.g. wall or door) between the two tiles
      * NOTE: assumes desired style has been set prior to the call
      */
-    this.drawBoundary = function(x1, y1, x2, y2) {
+    this.drawBoundary = function(locFrom, locTo) {
         this.ctx.beginPath();
-        if (x1 == x2) { // horizontal boundary
-            this.ctx.moveTo(x1 * TILE_SIZE, Math.max(y1, y2) * TILE_SIZE);
-            this.ctx.lineTo((x1 + 1) * TILE_SIZE, Math.max(y1, y2) * TILE_SIZE);
+        if (locFrom.x == locTo.x) { // horizontal boundary
+            this.ctx.moveTo(locFrom.x * TILE_SIZE, Math.max(locFrom.y, locTo.y) * TILE_SIZE);
+            this.ctx.lineTo((locFrom.x + 1) * TILE_SIZE, Math.max(locFrom.y, locTo.y) * TILE_SIZE);
         } else { // vertical
-            assert(y1 == y2, "misaligned boundary");
-            this.ctx.moveTo(Math.max(x1, x2) * TILE_SIZE, y1 * TILE_SIZE);
-            this.ctx.lineTo(Math.max(x1, x2) * TILE_SIZE, (y1 + 1) * TILE_SIZE);
+            assert(locFrom.y == locTo.y, "misaligned boundary");
+            this.ctx.moveTo(Math.max(locFrom.x, locTo.x) * TILE_SIZE, locFrom.y * TILE_SIZE);
+            this.ctx.lineTo(Math.max(locFrom.x, locTo.x) * TILE_SIZE, (locFrom.y + 1) * TILE_SIZE);
         }
 
         this.ctx.stroke();
     }
 
-    this.drawDoor = function(x1, y1, x2, y2) {
+    this.drawDoor = function(passage) {
         this.ctx.lineWidth = 2;
         this.ctx.strokeStyle = '#95E595';
-        this.drawBoundary(x1, y1, x2, y2);
+        this.drawBoundary(passage.from, passage.to);
     }
 
-    this.drawWall = function(x1, y1, x2, y2) {
+    this.drawWall = function(between, and) {
         this.ctx.lineWidth = 2;
         this.ctx.strokeStyle = '#000000';
-        this.drawBoundary(x1, y1, x2, y2);
+        this.drawBoundary(between, and);
     }
 
     this.drawMap = function(map) {
